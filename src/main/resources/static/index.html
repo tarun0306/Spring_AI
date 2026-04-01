@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini AI Chat</title>
+    <style>
+        /* Modern ChatGPT-like Dark Theme */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #343541;
+            color: #ececf1;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* Chat History Area */
+        #chat-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            padding-bottom: 20px;
+        }
+
+        .message {
+            padding: 24px 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .message.user {
+            background-color: #343541;
+        }
+
+        .message.ai {
+            background-color: #444654;
+            border-top: 1px solid rgba(32,33,35,0.5);
+            border-bottom: 1px solid rgba(32,33,35,0.5);
+        }
+
+        .message-content {
+            max-width: 800px;
+            width: 100%;
+            display: flex;
+            gap: 20px;
+        }
+
+        .avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .user .avatar { background-color: #5436da; color: white; }
+        .ai .avatar { background-color: #10a37f; color: white; }
+
+        .text-content {
+            line-height: 1.6;
+            white-space: pre-wrap; /* Crucial for preserving formatting and newlines */
+            font-size: 16px;
+            margin-top: 4px;
+        }
+
+        /* Input Area at the Bottom */
+        .input-container {
+            padding: 24px;
+            background-color: #343541;
+            display: flex;
+            justify-content: center;
+        }
+
+        .input-box {
+            max-width: 800px;
+            width: 100%;
+            position: relative;
+            display: flex;
+            background-color: #40414f;
+            border-radius: 12px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .input-box:focus-within {
+            border-color: rgba(255,255,255,0.4);
+        }
+
+        input[type="text"] {
+            flex-grow: 1;
+            padding: 16px 50px 16px 16px;
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 16px;
+            outline: none;
+        }
+
+        button {
+            position: absolute;
+            right: 8px;
+            top: 8px;
+            bottom: 8px;
+            background-color: #10a37f;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 0 16px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+
+        button:hover:not(:disabled) {
+            background-color: #1a7f64;
+        }
+
+        button:disabled {
+            background-color: #565869;
+            cursor: not-allowed;
+            color: #acacbe;
+        }
+
+        /* Loading animation cursor */
+        .cursor::after {
+            content: '▋';
+            animation: blink 1s step-start infinite;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+<div id="chat-container">
+    <div class="message ai">
+        <div class="message-content">
+            <div class="avatar">AI</div>
+            <div class="text-content">Hello! I am connected to your Spring AI backend. How can I help you today?</div>
+        </div>
+    </div>
+</div>
+
+<div class="input-container">
+    <div class="input-box">
+        <input type="text" id="userInput" placeholder="Send a message..." autocomplete="off">
+        <button id="sendBtn" onclick="startStreaming()">Send</button>
+    </div>
+</div>
+
+<script>
+    const chatContainer = document.getElementById('chat-container');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+
+    // Allow pressing "Enter" to send the message
+    userInput.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter' && !sendBtn.disabled) {
+            startStreaming();
+        }
+    });
+
+    // Helper to create and inject a new message row
+    function appendMessageRow(role, initialText) {
+        const msgDiv = document.createElement('div');
+        msgDiv.classList.add('message', role);
+
+        const contentContainer = document.createElement('div');
+        contentContainer.classList.add('message-content');
+
+        const avatar = document.createElement('div');
+        avatar.classList.add('avatar');
+        avatar.innerText = role === 'user' ? 'U' : 'AI';
+
+        const textDiv = document.createElement('div');
+        textDiv.classList.add('text-content');
+        textDiv.innerText = initialText;
+
+        contentContainer.appendChild(avatar);
+        contentContainer.appendChild(textDiv);
+        msgDiv.appendChild(contentContainer);
+
+        chatContainer.appendChild(msgDiv);
+        scrollToBottom();
+
+        return textDiv; // Return the text div so we can append streamed chunks to it
+    }
+
+    function scrollToBottom() {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    function startStreaming() {
+        const message = userInput.value.trim();
+        if (!message) return;
+
+        // 1. Add the User's message to the chat
+        appendMessageRow('user', message);
+
+        // 2. Clear input and disable controls while waiting
+        userInput.value = '';
+        userInput.disabled = true;
+        sendBtn.disabled = true;
+        sendBtn.innerText = "•••";
+
+        // 3. Create an empty AI message row with a blinking cursor
+        const currentAiTextContainer = appendMessageRow('ai', '');
+        currentAiTextContainer.classList.add('cursor');
+
+        // 4. Connect to the Spring Boot SSE endpoint
+        const url = `http://localhost:8082/stream/streams?provider=gemini&model=gemini-2.5-flash&message=${encodeURIComponent(message)}`;
+        const eventSource = new EventSource(url);
+
+        // 5. Stream data as it arrives
+        eventSource.onmessage = (event) => {
+            // Some backends escape newlines as "\n" strings. We fix that here just in case.
+            const chunk = event.data.replace(/\\n/g, '\n');
+            currentAiTextContainer.innerText += chunk;
+            scrollToBottom();
+        };
+
+        // 6. Handle completion or errors
+        eventSource.onerror = (err) => {
+            console.log("Stream finished or closed.");
+            eventSource.close();
+
+            // Remove blinking cursor
+            currentAiTextContainer.classList.remove('cursor');
+
+            // Re-enable inputs
+            userInput.disabled = false;
+            sendBtn.disabled = false;
+            sendBtn.innerText = "Send";
+            userInput.focus();
+        };
+    }
+</script>
+
+</body>
+</html>
