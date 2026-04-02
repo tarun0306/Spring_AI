@@ -32,7 +32,7 @@ public class ConversationController {
             @PathVariable String conversationId,
             @RequestBody String message
     ){
-        log.info("===REQUEST RECIVED===");
+        log.debug("===REQUEST RECIVED===");
         log.info("Message : {}",message);
         String provider = "Gemini";
         log.info("====REQUEST RECEIVED====");
